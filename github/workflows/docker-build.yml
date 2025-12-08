@@ -1,0 +1,39 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+      uses: actions/checkout@v4
+
+      - name: Define version based on timestamp
+        id: vars
+        run: echo "VERSION=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
+
+      - name: Login to DockerHub
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+      - name: Build and push Docker image
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          VERSION: ${{ env.VERSION }}
+        run: |
+          docker build -t $DOCKER_USERNAME/api-sast-p2-iec:$VERSION .
+          docker tag $DOCKER_USERNAME/api-sast-p2-iec:$VERSION $DOCKER_USERNAME/api-sast-p2-iec:latest
+          docker push $DOCKER_USERNAME/api-sast-p2-iec:$VERSION
+          docker push $DOCKER_USERNAME/api-sast-p2-iec:latest
+
+      - name: Show image on DockerHub
+        run: |
+          echo "Imagem publicada com sucesso!"
+          echo "Versão publicada: $VERSION"

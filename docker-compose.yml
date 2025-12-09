@@ -1,0 +1,15 @@
+
+services:
+  api:
+    container_name: api-sast-p2-iec
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    restart: always
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - .:/app
+      - /app/node_modules

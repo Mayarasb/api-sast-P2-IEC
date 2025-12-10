@@ -1,4 +1,5 @@
 name: Build
+<<<<<<< HEAD
 
 on:
   push:
@@ -13,10 +14,22 @@ jobs:
     name: Build and Analyze
     runs-on: ubuntu-latest
 
+=======
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
+  sonarqube:
+    name: SonarQube
+    runs-on: windows-latest
+>>>>>>> b1d481f6193e4e450a016545562256a8f5739c08
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
+<<<<<<< HEAD
           fetch-depth: 0   
 
       - name: Use Node.js
@@ -39,3 +52,10 @@ jobs:
             -Dsonar.organization=api-sast-iec
             -Dsonar.sources=src
             -Dsonar.exclusions=node_modules/**,tests/**
+=======
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+>>>>>>> b1d481f6193e4e450a016545562256a8f5739c08

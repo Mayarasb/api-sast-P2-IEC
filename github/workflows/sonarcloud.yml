@@ -1,71 +1,41 @@
-name: SonarCloud Scan
+name: Build
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
+      - develop
   pull_request:
-    branches: [ "main" ]
+    types: [opened, synchronize, reopened]
 
 jobs:
-  sonarcloud:
-    name: Run SonarCloud Analysis
+  build:
+    name: Build and Analyze
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0   
 
-      - name: Setup Node.js
+      - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: '20'
 
       - name: Install dependencies
         run: npm install
-
-      - name: Run tests (opcional)
-        run: npm test || echo "Nenhum teste configurado"
-
+          
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2
+        with:
+          projectBaseDir: .
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-name: SonarCloud Scan
-
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-
-jobs:
-  sonarcloud:
-    name: Run SonarCloud Analysis
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # necessário para PRs
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Run tests (opcional)
-        run: npm test || echo "Nenhum teste configurado"
-
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@v2
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          with:
+          args: >
+            -Dsonar.projectKey=api-sast-iec_api-sast-p2-iec
+            -Dsonar.organization=api-sast-iec
+            -Dsonar.sources=src
+            -Dsonar.exclusions=node_modules/**,tests/**

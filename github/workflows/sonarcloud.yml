@@ -2,94 +2,121 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches:
-      - main
-      - develop
+    branches: [ develop, main ]
   pull_request:
+    branches: [ develop, main ]
     types: [opened, synchronize, reopened]
 
+env:
+  IMAGE_NAME: mayarasb/api-sast-p2-iec
+
 jobs:
-
-  build:
-    name: CI + Sonar + Docker Build
+  pipeline:
     runs-on: ubuntu-latest
-
     steps:
-      # -------------------------------
       # 1) CHECKOUT
-      # -------------------------------
-      - name: Checkout Repository
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # necessário para sonar
+          fetch-depth: 0
 
-      # -------------------------------
-      # 2) INSTALL DEPENDENCIES
-      # -------------------------------
+      # 2) SETUP NODE
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Install Dependencies
+      # 3) INSTALL
+      - name: Install dependencies
         run: npm install
 
-      # -------------------------------
-      # 3) TESTS
-      # -------------------------------
-      - name: Run Tests
-        run: npm test --if-present
+      # 4) TESTS
+      - name: Run tests
+        run: npm test
 
-      # -------------------------------
-      # 4) SONARCLOUD (SAST)
-      # -------------------------------
+      # === DESAFIO 1: dependency audit (novo item) ===
+      - name: NPM Audit (dependency scan)
+        run: npm audit --omit=dev || true
+
+      # 5) SAST - SonarCloud (obrigatório)
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@v6
+        uses: SonarSource/sonarcloud-github-action@v2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          projectBaseDir: '.'
+          args: >
+            -Dsonar.projectKey=api-sast-iec_api-sast-p2-iec
+            -Dsonar.organization=api-sast-iec
+            -Dsonar.sources=src
+            -Dsonar.host.url=https://sonarcloud.io
+            -Dsonar.exclusions=node_modules/**,tests/**
 
-      - name: Quality Gate
-        uses: SonarSource/sonarqube-quality-gate-action@v1
+      # NOTE: do not fail pipeline on bad quality gate (per requirement)
+      # if you want to inspect quality gate result, you can add the Quality Gate step but ignore failure:
+      - name: Wait for SonarCloud Quality Gate (non-blocking)
+        uses: SonarSource/sonarcloud-quality-gate-action@v1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        continue-on-error: true
 
-      # -------------------------------
-      # 5) BUILD DA APLICAÇÃO
-      # -------------------------------
-      - name: Build App
+      # 6) BUILD (if any build step exists)
+      - name: Build
         run: npm run build --if-present
 
-      # -------------------------------
-      # 6) VERSIONAMENTO (pega versão do package.json)
-      # -------------------------------
+      # 7) Versionamento: calculate version (from package.json)
       - name: Get version from package.json
-        id: version
-        run: echo "version=$(node -p \"require('./package.json').version\")" >> $GITHUB_OUTPUT
+        id: get_version
+        run: echo "VERSION=$(node -p \"require('./package.json').version\")" >> $GITHUB_ENV
 
-      # -------------------------------
-      # 7) LOGIN DOCKER HUB
-      # -------------------------------
+      # === DESAFIO 2: container scanning (novo item) ===
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # -------------------------------
-      # 8) BUILD IMAGEM DOCKER
-      # -------------------------------
-      - name: Build Docker Image
+      - name: Build and tag Docker image
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/api-sast:${{ steps.version.outputs.version }} .
-          docker tag ${{ secrets.DOCKER_USERNAME }}/api-sast:${{ steps.version.outputs.version }} ${{ secrets.DOCKER_USERNAME }}/api-sast:latest
+          docker build -t $IMAGE_NAME:${{ env.VERSION }} .
+          docker tag $IMAGE_NAME:${{ env.VERSION }} $IMAGE_NAME:latest
 
-      # -------------------------------
-      # 9) PUSH IMAGEM PARA DOCKER HUB
-      # -------------------------------
-      - name: Push Docker Image
+      - name: Save image to artifact (optional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-name
+          path: |
+            image-info.txt
+        env:
+          IMAGE_TAG: ${{ env.VERSION }}
+        run: echo "$IMAGE_NAME:${IMAGE_TAG}" > image-info.txt
+
+      - name: Docker push
         run: |
-          docker push ${{ secrets.DOCKER_USERNAME }}/api-sast:${{ steps.version.outputs.version }}
-          docker push ${{ secrets.DOCKER_USERNAME }}/api-sast:latest
+          docker push $IMAGE_NAME:${{ env.VERSION }}
+          docker push $IMAGE_NAME:latest
+
+      - name: Trivy scan (container vulnerability scan)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: $IMAGE_NAME:${{ env.VERSION }}
+        continue-on-error: true
+
+      # 8) Create git tag for version (only on develop->release flow or CI policy)
+      - name: Create Git Tag
+        if: github.ref == 'refs/heads/develop'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]" 
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ env.VERSION }}" -m "Release v${{ env.VERSION }}" || echo "Tag already exists"
+          git push origin "v${{ env.VERSION }}" || echo "Tag push failed or already present"
+
+      # 9) Deploy: Render via Docker Image (we will configure Render to pull this image)
+      - name: Deploy - notify / placeholder
+        run: echo "Deploy será acionado via Render auto-deploy a partir do Docker Hub image: $IMAGE_NAME:${{ env.VERSION }}"

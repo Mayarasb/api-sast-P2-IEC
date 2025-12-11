@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ develop ]
 
+permissions:         
+  contents: write    
+
 env:
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/NOME_REPO
 
@@ -15,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:                         
+          fetch-depth: 0              
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -38,12 +43,19 @@ jobs:
       - name: Calculate version (semantic / tag)
         id: ver
         run: |
-          # exemplo simples: pega última tag e incrementa patch
-          TAG=$(git describe --tags --abbrev=0 || echo "v0.0.0")
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           IFS='.' read -r MAJ MIN PATCH <<< "${TAG#v}"
           PATCH=$((PATCH+1))
           NEW_TAG="v${MAJ}.${MIN}.${PATCH}"
           echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
+     
+      - name: Create and push Git tag        
+        run: |                               
+          git config user.name "${{ github.actor }}" 
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git tag ${{ steps.ver.outputs.new_tag }}
+          git push origin ${{ steps.ver.outputs.new_tag }}
 
       - name: Build Docker image
         run: docker build -t $IMAGE_NAME:${{ steps.ver.outputs.new_tag }} .
@@ -71,8 +83,6 @@ jobs:
     steps:
       - name: Deploy to Render (via API)
         run: |
-          # exemplo: usar Render's Deploy Web Service via API para forçar deploy usando imagem
-          # precisa do RENDER_SERVICE_ID e RENDER_API_KEY nos secrets
           curl -X POST \
            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
            -H "Content-Type: application/json" \

@@ -285,6 +285,7 @@
     "superagent": "^8.1.2",
     "supertest": "^6.3.4",
     "supports-color": "^7.2.0",
+    "swagger-autogen": "^2.23.7",
     "swagger-jsdoc": "^6.2.8",
     "swagger-parser": "^10.0.3",
     "swagger-ui-dist": "^5.30.3",

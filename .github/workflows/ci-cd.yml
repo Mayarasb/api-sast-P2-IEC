@@ -55,8 +55,17 @@ jobs:
         run: |
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
-          git tag ${{ steps.ver.outputs.new_tag }}
-          git push origin ${{ steps.ver.outputs.new_tag }}
+
+          # Pega a nova tag
+          NEW_TAG=${{ steps.ver.outputs.new_tag }}
+
+          # Verifica se a tag já existe
+          if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
+            echo "Tag $NEW_TAG already exists, skipping..."
+          else
+            git tag "$NEW_TAG"
+            git push origin "$NEW_TAG"
+          fi
 
       - name: Build Docker image
         run: docker build -t $IMAGE_NAME:${{ steps.ver.outputs.new_tag }} .

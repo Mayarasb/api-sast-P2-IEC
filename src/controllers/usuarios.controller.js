@@ -1,7 +1,7 @@
 export const getUsers = (req, res) => {
   res.json([
-    { id: 1, name: "Mayara", role: "admin" },
-    { id: 2, name: "João", role: "user" }
+    { id: 1, name: "Mayara Souza ", role: "admin" },
+    { id: 2, name: "João Silva", role: "user" }
   ]);
 };
 

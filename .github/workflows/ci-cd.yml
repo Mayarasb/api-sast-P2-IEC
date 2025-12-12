@@ -35,40 +35,70 @@ jobs:
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2
-
         with:
           args: >
             -Dsonar.login=${{ secrets.SONAR_TOKEN }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      - name: Calculate version (semantic / tag)
-        id: ver
+
+      - name: Calculate semantic version
+        id: version
+        shell: bash
         run: |
-          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          IFS='.' read -r MAJ MIN PATCH <<< "${TAG#v}"
+          set -euo pipefail
+          git fetch --tags --force --prune
+
+          # Verifica se o HEAD já possui uma tag semântica (idempotência)
+          EXISTING_TAG=$(git tag --points-at HEAD | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+
+          if [ -n "$EXISTING_TAG" ]; then
+            echo "Tag já existe no HEAD: $EXISTING_TAG"
+            VERSION="${EXISTING_TAG#v}"
+            echo "new_tag=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "should_tag=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Última tag semântica
+          LAST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          [ -z "$LAST_TAG" ] && LAST_TAG="v0.0.0"
+
+          echo "Última tag: $LAST_TAG"
+
+          CURRENT="${LAST_TAG#v}"
+
+          IFS='.' read -r MAJ MIN PATCH <<< "$CURRENT"
           PATCH=$((PATCH+1))
-          NEW_TAG="v${MAJ}.${MIN}.${PATCH}"
-          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
+          NEW_VERSION="v$MAJ.$MIN.$PATCH"
+
+          echo "Nova versão calculada: $NEW_VERSION"
+
+          echo "new_tag=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "should_tag=true" >> "$GITHUB_OUTPUT"
 
       - name: Create and push Git tag
+        if: github.ref == 'refs/heads/main' && steps.version.outputs.should_tag == 'true'
         run: |
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
-          # Pega a nova tag
-          NEW_TAG=${{ steps.ver.outputs.new_tag }}
+          TAG="v${{ steps.version.outputs.new_tag }}"
 
-          # Verifica se a tag já existe
-          if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
-            echo "Tag $NEW_TAG already exists, skipping..."
+          # Caso já exista, não tenta criar
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG já existe. Pulando..."
           else
-            git tag "$NEW_TAG"
-            git push origin "$NEW_TAG"
+            git tag "$TAG"
+            git push origin "$TAG"
           fi
 
+
+
+
       - name: Build Docker image
-        run: docker build -t $IMAGE_NAME:${{ steps.ver.outputs.new_tag }} .
+        run: docker build -t $IMAGE_NAME:${{ steps.version.outputs.new_tag }} .
 
       - name: Log in to DockerHub
         uses: docker/login-action@v2
@@ -78,14 +108,17 @@ jobs:
 
       - name: Push image to DockerHub
         run: |
-          docker tag $IMAGE_NAME:${{ steps.ver.outputs.new_tag }} $IMAGE_NAME:latest
-          docker push $IMAGE_NAME:${{ steps.ver.outputs.new_tag }}
+          docker tag $IMAGE_NAME:${{ steps.version.outputs.new_tag }} $IMAGE_NAME:latest
+          docker push $IMAGE_NAME:${{ steps.version.outputs.new_tag }}
           docker push $IMAGE_NAME:latest
 
       - name: Create GitHub release tag
+        if: github.ref == 'refs/heads/main' && steps.version.outputs.should_tag == 'true'
         uses: ncipollo/release-action@v1
         with:
-          tag: ${{ steps.ver.outputs.new_tag }}
+          tag: v${{ steps.version.outputs.new_tag }}
+
+
 
   deploy:
     runs-on: ubuntu-latest
@@ -97,5 +130,5 @@ jobs:
           curl -X POST \
            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
            -H "Content-Type: application/json" \
-           -d '{"service":"${{ secrets.RENDER_SERVICE_ID }}", "image":"'"${{ secrets.DOCKERHUB_USERNAME }}/api-sast-p2-iec:${{ steps.ver.outputs.new_tag }}"'"}' \
+           -d '{"service":"${{ secrets.RENDER_SERVICE_ID }}", "image":"'"${{ secrets.DOCKERHUB_USERNAME }}/api-sast-p2-iec:${{ steps.version.outputs.new_tag }}"'"}' \
            "https://api.render.com/deploys"

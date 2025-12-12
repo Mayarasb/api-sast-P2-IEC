@@ -5,7 +5,7 @@
     "description": "Documentação automática gerada via Swagger Autogen",
     "version": "1.0.0"
   },
-  "host": "localhost:3000",
+  "host": "https://api-sast-p2-iec-1.onrender.com",
   "basePath": "/",
   "schemes": [
     "http"
